@@ -1,0 +1,25 @@
+Development requirements:
+- x64 Native Tools for VS 2022 (Windows)
+- Python 3.11.2
+- pip install build abi3audit auditwheel twine
+
+Build sdist:
+python -m build --sdist
+
+Build whl:
+python -m build --wheel
+
+Test:
+pip uninstall your_package
+pip install your_package.whl
+python test.py
+
+ABI audit:
+abi3audit your_package.whl -v
+
+Linux:
+strip --strip-debug --strip-unneeded ext_in_whl.so
+python -m auditwheel repair your_package.whl
+
+Upload:
+python -m twine upload dist/* -u__token__ -p***
