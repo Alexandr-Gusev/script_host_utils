@@ -102,7 +102,7 @@ static void filtered_item_json_dumps(
         if (PyUnicode_Check(key)) {
           append_string_with_replace_special_chars(key_str, PyUnicode_AsUTF8AndSize(key, nullptr));
         } else if (PyLong_Check(key)) {
-          key_str = std::to_string(PyLong_AsLong(key));
+          key_str = std::to_string(PyLong_AsLongLong(key));
         } else if (PyByteArray_Check(key)) {
           append_string_with_replace_special_chars(key_str, PyByteArray_AsString(key));
         } else {
@@ -135,7 +135,7 @@ static void filtered_item_json_dumps(
       res += "false";
     }
   } else if (PyLong_Check(obj)) {
-    res += std::to_string(PyLong_AsLong(obj));
+    res += std::to_string(PyLong_AsLongLong(obj));
   } else if (PyFloat_Check(obj)) {
     res += std::to_string(PyFloat_AsDouble(obj));
   } else if (obj == Py_None) {
@@ -145,83 +145,83 @@ static void filtered_item_json_dumps(
   }
 }
 
-struct PythonGilState {
-  PyGILState_STATE state;
-  PythonGilState(): state(PyGILState_Ensure()) {}
-  ~PythonGilState() {PyGILState_Release(state);}
-};
-
 static PyObject* filtered_json_dumps(PyObject* self, PyObject* args) {
-  PyObject* obj = Py_None;
-  PyObject* filter_obj = Py_None;
-  PyObject* mapping_obj = Py_None;
-  if (!PyArg_ParseTuple(args, "OOO", &obj, &filter_obj, &mapping_obj)) {
-    PyErr_SetString(PyExc_RuntimeError, "bad args");
-    return 0;
-  }
-
-  std::unordered_map<std::string, std::shared_ptr<std::unordered_set<std::string>>> filters_by_keys;
-  std::unordered_map<std::string, std::string> mapping;
   std::string res;
+  try {
+    PyObject* obj = Py_None;
+    PyObject* filter_obj = Py_None;
+    PyObject* mapping_obj = Py_None;
+    if (!PyArg_ParseTuple(args, "OOO", &obj, &filter_obj, &mapping_obj)) {
+      throw std::runtime_error("bad args");
+    }
 
-  PythonGilState lock;
-  if (PyDict_Check(filter_obj)) {
-    Py_ssize_t pos = 0;
-    PyObject* key = nullptr;
-    PyObject* value = nullptr;
-    while (PyDict_Next(filter_obj, &pos, &key, &value)) {
-      if (!PyUnicode_Check(key)) {
-        throw std::runtime_error("the filter object keys are not strings");
-      }
+    std::unordered_map<std::string, std::shared_ptr<std::unordered_set<std::string>>> filters_by_keys;
+    std::unordered_map<std::string, std::string> mapping;
 
-      std::string key_str;
-      append_string_with_replace_special_chars(key_str, PyUnicode_AsUTF8AndSize(key, nullptr));
-      if (PyList_Check(value)) {
-        Py_ssize_t size = PyList_Size(value);
-        auto exract_keys = std::make_shared<std::unordered_set<std::string>>();
-        for (Py_ssize_t i = 0; i < size; i++) {
-          PyObject* extract_key_obj = PyList_GetItem(value, i);
-          if (PyUnicode_Check(extract_key_obj)) {
-            std::string item_str;
-            append_string_with_replace_special_chars(item_str, PyUnicode_AsUTF8AndSize(extract_key_obj, nullptr));
-            exract_keys->insert(item_str);
-          } else {
-            throw std::runtime_error("the filter object values is not a string list");
-          }
+    if (PyDict_Check(filter_obj)) {
+      Py_ssize_t pos = 0;
+      PyObject* key = nullptr;
+      PyObject* value = nullptr;
+      while (PyDict_Next(filter_obj, &pos, &key, &value)) {
+        if (!PyUnicode_Check(key)) {
+          throw std::runtime_error("the filter object keys are not strings");
         }
-        filters_by_keys[key_str] = exract_keys;
-      } else {
-        throw std::runtime_error("the filter object values is not a string list");
+
+        std::string key_str;
+        append_string_with_replace_special_chars(key_str, PyUnicode_AsUTF8AndSize(key, nullptr));
+        if (PyList_Check(value)) {
+          Py_ssize_t size = PyList_Size(value);
+          auto exract_keys = std::make_shared<std::unordered_set<std::string>>();
+          for (Py_ssize_t i = 0; i < size; i++) {
+            PyObject* extract_key_obj = PyList_GetItem(value, i);
+            if (PyUnicode_Check(extract_key_obj)) {
+              std::string item_str;
+              append_string_with_replace_special_chars(item_str, PyUnicode_AsUTF8AndSize(extract_key_obj, nullptr));
+              exract_keys->insert(item_str);
+            } else {
+              throw std::runtime_error("the filter object values is not a string list");
+            }
+          }
+          filters_by_keys[key_str] = exract_keys;
+        } else {
+          throw std::runtime_error("the filter object values is not a string list");
+        }
       }
+    } else {
+      throw std::runtime_error("the filter object is not a dictionary");
     }
-  } else {
-    throw std::runtime_error("the filter object is not a dictionary");
-  }
 
-  if (PyDict_Check(mapping_obj)) {
-    Py_ssize_t pos = 0;
-    PyObject* key = nullptr;
-    PyObject* value = nullptr;
-    while (PyDict_Next(mapping_obj, &pos, &key, &value)) {
-      if (!PyUnicode_Check(key)) {
-        throw std::runtime_error("the mapping object keys are not strings");
-      }
+    if (PyDict_Check(mapping_obj)) {
+      Py_ssize_t pos = 0;
+      PyObject* key = nullptr;
+      PyObject* value = nullptr;
+      while (PyDict_Next(mapping_obj, &pos, &key, &value)) {
+        if (!PyUnicode_Check(key)) {
+          throw std::runtime_error("the mapping object keys are not strings");
+        }
 
-      std::string key_str;
-      append_string_with_replace_special_chars(key_str, PyUnicode_AsUTF8AndSize(key, nullptr));
-      if (PyUnicode_Check(value)) {
-        std::string value_str;
-        append_string_with_replace_special_chars(value_str, PyUnicode_AsUTF8AndSize(value, nullptr));
-        mapping[key_str] = value_str;
-      } else {
-        throw std::runtime_error("the mapping object values are not strings");
+        std::string key_str;
+        append_string_with_replace_special_chars(key_str, PyUnicode_AsUTF8AndSize(key, nullptr));
+        if (PyUnicode_Check(value)) {
+          std::string value_str;
+          append_string_with_replace_special_chars(value_str, PyUnicode_AsUTF8AndSize(value, nullptr));
+          mapping[key_str] = value_str;
+        } else {
+          throw std::runtime_error("the mapping object values are not strings");
+        }
       }
+    } else {
+      throw std::runtime_error("the mapping object is not a dictionary");
     }
-  } else {
-    throw std::runtime_error("the mapping object is not a dictionary");
-  }
 
-  filtered_item_json_dumps(obj, res, filters_by_keys, mapping);
+    filtered_item_json_dumps(obj, res, filters_by_keys, mapping);
+  } catch (const std::exception& e) {
+    PyErr_SetString(PyExc_RuntimeError, e.what());
+    return 0;    
+  }
+  if (PyErr_Occurred()) {
+    return 0;    
+  }  
   return PyUnicode_FromString(res.c_str());
 }
 
@@ -256,13 +256,22 @@ static size_t levenshtein_distance(const std::string& s1, const std::string& s2)
 }
 
 static PyObject* levenshtein_distance(PyObject* self, PyObject* args) {
-  char* s1 = nullptr;
-  char* s2 = nullptr;
-  if (!PyArg_ParseTuple(args, "ss", &s1, &s2) || !s1 || !s2) {
-    PyErr_SetString(PyExc_RuntimeError, "bad args");
-    return 0;
+  size_t res;
+  try {
+    char* s1 = nullptr;
+    char* s2 = nullptr;
+    if (!PyArg_ParseTuple(args, "ss", &s1, &s2) || !s1 || !s2) {
+      throw std::runtime_error("bad args");
+    }
+    res = levenshtein_distance(s1, s2);
+  } catch (const std::exception& e) {
+    PyErr_SetString(PyExc_RuntimeError, e.what());
+    return 0;    
   }
-  return Py_BuildValue("i", levenshtein_distance(s1, s2));
+  if (PyErr_Occurred()) {
+    return 0;    
+  }  
+  return Py_BuildValue("i", res);
 }
 
 static PyMethodDef methods[] =
